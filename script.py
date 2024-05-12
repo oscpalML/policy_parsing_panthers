@@ -1,16 +1,26 @@
-import argparse
+#!/usr/bin/env python3
 
-def parse_args():
-    parser = argparse.ArgumentParser(prog='script')
-    parser.add_argument('-i', '--input', required=True, help='the input to the script.')
-    parser.add_argument('-o', '--output', required=True, help='the output of the script.')
+import os
+import sys
+import pandas as pd
 
-    return parser.parse_args()
 
-if __name__ == '__main__':
-    args = parse_args()
+input_dir = os.environ["inputDataset"]
+output_dir = os.environ["outputDir"]
 
-    print(f'This is a demo, I ignore the passed input {args.input} and write some content into the output file {args.output}.')
-    with open(args.output + '/predictions.jsonl', 'w') as f:
-        f.write('hello world')
-    print('Done. I wrote "hello world" to {args.output}/predictions.jsonl.')
+
+def fprint(text):
+    with open(output_dir+'/out.txt', 'w') as sys.stdout:
+        print(text)
+
+def get_task_sets(folder):
+    base = input_dir+"/"+folder
+    dfs = {}
+    for dir in os.listdir(base):
+        if dir.endswith(".tsv"):
+            dfs[dir] = pd.read_csv(base+"/"+dir, sep="\t")
+    return dfs
+
+ori_sets = get_task_dfs("orientation")
+pow_sets = get_task_dfs("power")
+
