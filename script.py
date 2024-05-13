@@ -5,6 +5,9 @@ import sys
 import pandas as pd
 from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding, Trainer, TrainingArguments
+import torch
+
+runname = "test"
 
 input_dir = os.environ["inputDataset"]
 output_dir = os.environ["outputDir"]
@@ -78,34 +81,70 @@ def get_task_sets(folder):
 
 def get_dsd_logits(task, dsd, field, model_name, seq_len=512):
     tokenizer = AutoTokenizer.from_pretrained(model_name)
+    data_collator = DataCollatorWithPadding(tokenizer=tokenizer)
+
     def tokenize_function(examples):
         return  tokenizer(examples[field], truncation=True, max_length=seq_len)
-    dsd = dsd.map(tokenize_function, batched=True)
+    dsd = dsd.map(tokenize_function, batched=True)    
 
     args = TrainingArguments(output_dir="/temp_out",
                               use_cpu=True,
-                              per_device_eval_batch_size = 2
+                              per_device_eval_batch_size = 5,
+                              group_by_length = True
                               )
     
     model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2, problem_type="multi_label_classification")
-    trainer = Trainer(model = model, args = args)
+    trainer = Trainer(model = model, 
+                      args = args,
+                      tokenizer=tokenizer,
+                      data_collator=data_collator
+                      )
 
+    logits_dict = {}
     for key, ds in dsd.items():
-        logits = trainer.predict(test_dataset=ds)
-        fprint(logits)
+        logits = torch.Tensor(trainer.predict(test_dataset=ds)[0][:, model.config.label2id[task]])
+        logits_dict[key] = logits
 
-    index = model.config.label2id[task]
+    return logits_dict
 
+def get_dsd_ids(dsd):
+    return {key:ds["id"] for key, ds in dsd.items()}
 
-    
+def logits_to_preds(logits_dict):
+    return {key:torch.round(torch.sigmoid(logits)) for key, logits in logits_dict.items()}
+
+def write_preds_dict(preds_dict, task):
+    if task=="orientation":
+        ids_dict = ori_ids
+    elif task=="power":
+        ids_dict = pow_ids
+
+    for key, preds in preds_dict.items():
+        df = pd.DataFrame(data=preds, index=ids_dict[key])
+        df.to_csv(output_dir+"/policyparsingpanthers-"+task+"-"+key+"-"+runname+".tsv", header=False, sep="\t", index=True)
 
 
 ori_dsd = get_task_sets("orientation")
 pow_dsd = get_task_sets("power")
 
+ori_ids = get_dsd_ids(ori_dsd)
+pow_ids = get_dsd_ids(pow_dsd)
+
 xlmr_name = "oscpalML/XLM-RoBERTa-political-classification"
 
-get_dsd_logits("orientation", ori_dsd, "text", xlmr_name, seq_len=512)
+xlmr_ori_logits = get_dsd_logits("orientation", ori_dsd, "text", xlmr_name, seq_len=512)
+xlmr_pow_logits = get_dsd_logits("power", pow_dsd, "text", xlmr_name, seq_len=512)
+
+#deb_name = "oscpalML/DeBERTa-political-classification"
+
+xlmr_ori_preds = logits_to_preds(xlmr_ori_logits)
+xlmr_pow_preds = logits_to_preds(xlmr_pow_logits)
+
+write_preds_dict(xlmr_ori_logits, "orientation")
+write_preds_dict(xlmr_pow_logits, "power")
 
 
-deb_name = "oscpalML/DeBERTa-political-classification"
+
+
+
+
