@@ -7,7 +7,7 @@ from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding, Trainer, TrainingArguments
 import torch
 
-runname = "test"
+runname = "xlmr_regular"
 
 input_dir = os.environ["inputDataset"]
 output_dir = os.environ["outputDir"]
@@ -76,7 +76,8 @@ def get_task_sets(folder):
     sets = {}
     for dir in os.listdir(base):
         if dir.endswith(".tsv"):
-            sets[dir] = get_ds(base+"/"+dir)
+            name = dir.split(".")[0]
+            sets[name] = get_ds(base+"/"+dir)
     return DatasetDict(sets)
 
 def get_dsd_logits(task, dsd, field, model_name, seq_len=512):
@@ -88,7 +89,7 @@ def get_dsd_logits(task, dsd, field, model_name, seq_len=512):
     dsd = dsd.map(tokenize_function, batched=True)    
 
     args = TrainingArguments(output_dir="/temp_out",
-                              use_cpu=True,
+                              use_cpu=not torch.cuda.is_available(),
                               per_device_eval_batch_size = 5,
                               group_by_length = True
                               )
@@ -135,13 +136,11 @@ xlmr_name = "oscpalML/XLM-RoBERTa-political-classification"
 xlmr_ori_logits = get_dsd_logits("orientation", ori_dsd, "text", xlmr_name, seq_len=512)
 xlmr_pow_logits = get_dsd_logits("power", pow_dsd, "text", xlmr_name, seq_len=512)
 
-#deb_name = "oscpalML/DeBERTa-political-classification"
-
 xlmr_ori_preds = logits_to_preds(xlmr_ori_logits)
 xlmr_pow_preds = logits_to_preds(xlmr_pow_logits)
 
-write_preds_dict(xlmr_ori_logits, "orientation")
-write_preds_dict(xlmr_pow_logits, "power")
+write_preds_dict(xlmr_ori_preds, "orientation")
+write_preds_dict(xlmr_pow_preds, "power")
 
 
 
