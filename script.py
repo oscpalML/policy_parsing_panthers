@@ -7,14 +7,12 @@ from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding, Trainer, TrainingArguments
 import torch
 
-runname = "xlmr_regular"
+runname = "deb3_regular"
 
 input_dir = os.environ["inputDataset"]
 output_dir = os.environ["outputDir"]
 
-def fprint(text):
-    with open(output_dir+'/out.txt', 'a') as sys.stdout:
-        print(text)
+batch_size = int(sys.argv[1])
 
 country_codes = {
     "at": "Austria",
@@ -55,12 +53,12 @@ sex_codes = {"F":"Female", "M":"Male", "U":"Unknown"}
 def prepend_data_orig(row):
     country = "".join(filter(lambda x: not x.isdigit(), str(row["id"])))
     sex = str(row["sex"])
-    return country_codes[country]+", "+sex_codes[sex]+". "+row["text"]
+    return country_codes[country]+", "+sex_codes[sex]+". "+str(row["text"])
 
 def prepend_data_trans(row):
     country = "".join(filter(lambda x: not x.isdigit(), str(row["id"])))
     sex = str(row["sex"])
-    return country_codes[country]+", "+sex_codes[sex]+". "+row["text_en"]
+    return country_codes[country]+", "+sex_codes[sex]+". "+str(row["text_en"])
 
 
 def get_ds(path):
@@ -76,7 +74,8 @@ def get_task_sets(folder):
     sets = {}
     for dir in os.listdir(base):
         if dir.endswith(".tsv"):
-            name = dir.split(".")[0]
+            name = dir.removesuffix("-test.tsv")
+            name = name.removeprefix(folder+"-")
             sets[name] = get_ds(base+"/"+dir)
     return DatasetDict(sets)
 
@@ -90,7 +89,7 @@ def get_dsd_logits(task, dsd, field, model_name, seq_len=512):
 
     args = TrainingArguments(output_dir="/temp_out",
                               use_cpu=not torch.cuda.is_available(),
-                              per_device_eval_batch_size = 5,
+                              per_device_eval_batch_size = batch_size,
                               group_by_length = True
                               )
     
@@ -131,19 +130,13 @@ pow_dsd = get_task_sets("power")
 ori_ids = get_dsd_ids(ori_dsd)
 pow_ids = get_dsd_ids(pow_dsd)
 
-xlmr_name = "oscpalML/XLM-RoBERTa-political-classification"
+deb3_name = "oscpalML/DeBERTa-political-classification"
 
-xlmr_ori_logits = get_dsd_logits("orientation", ori_dsd, "text", xlmr_name, seq_len=512)
-xlmr_pow_logits = get_dsd_logits("power", pow_dsd, "text", xlmr_name, seq_len=512)
+deb3_ori_logits = get_dsd_logits("orientation", ori_dsd, "text_en", deb3_name, seq_len=512)
+deb3_pow_logits = get_dsd_logits("power", pow_dsd, "text_en", deb3_name, seq_len=512)
 
-xlmr_ori_preds = logits_to_preds(xlmr_ori_logits)
-xlmr_pow_preds = logits_to_preds(xlmr_pow_logits)
+deb3_ori_preds = logits_to_preds(deb3_ori_logits)
+deb3_pow_preds = logits_to_preds(deb3_pow_logits)
 
-write_preds_dict(xlmr_ori_preds, "orientation")
-write_preds_dict(xlmr_pow_preds, "power")
-
-
-
-
-
-
+write_preds_dict(deb3_ori_preds, "orientation")
+write_preds_dict(deb3_pow_preds, "power")
