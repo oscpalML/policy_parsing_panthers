@@ -7,7 +7,7 @@ from datasets import Dataset, DatasetDict
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, DataCollatorWithPadding, Trainer, TrainingArguments
 import torch
 
-runname = "deb3_regular"
+runname = "deberta(long)_xlmr_ensemble"
 
 input_dir = os.environ["inputDataset"]
 output_dir = os.environ["outputDir"]
@@ -123,6 +123,13 @@ def write_preds_dict(preds_dict, task):
         df = pd.DataFrame(data=preds, index=ids_dict[key])
         df.to_csv(output_dir+"/policyparsingpanthers-"+task+"-"+key+"-"+runname+".tsv", header=False, sep="\t", index=True)
 
+def ensem_logits(first_logits, second_logits):
+    res = {}
+    for key, _ in first_logits.items():
+        res[key] = torch.add(first_logits[key], second_logits[key])/2.0
+    return res
+
+
 
 ori_dsd = get_task_sets("orientation")
 pow_dsd = get_task_sets("power")
@@ -130,13 +137,21 @@ pow_dsd = get_task_sets("power")
 ori_ids = get_dsd_ids(ori_dsd)
 pow_ids = get_dsd_ids(pow_dsd)
 
-deb3_name = "oscpalML/DeBERTa-political-classification"
+xlmr_name = "oscpalML/XLM-RoBERTa-political-classification"
 
-deb3_ori_logits = get_dsd_logits("orientation", ori_dsd, "text_en", deb3_name, seq_len=512)
-deb3_pow_logits = get_dsd_logits("power", pow_dsd, "text_en", deb3_name, seq_len=512)
+xlmr_ori_logits = get_dsd_logits("orientation", ori_dsd, "text", xlmr_name, seq_len=512)
+xlmr_pow_logits = get_dsd_logits("power", pow_dsd, "text", xlmr_name, seq_len=512)
 
-deb3_ori_preds = logits_to_preds(deb3_ori_logits)
-deb3_pow_preds = logits_to_preds(deb3_pow_logits)
+deberta_name = "oscpalML/DeBERTa-political-classification"
 
-write_preds_dict(deb3_ori_preds, "orientation")
-write_preds_dict(deb3_pow_preds, "power")
+deb_ori_logits = get_dsd_logits("orientation", ori_dsd, "text_en", deberta_name, seq_len=2048)
+deb_pow_logits = get_dsd_logits("power", pow_dsd, "text_en", deberta_name, seq_len=2048)
+
+ensem_ori_logits = ensem_logits(xlmr_ori_logits, deb_ori_logits)
+ensem_pow_logits = ensem_logits(xlmr_pow_logits, deb_pow_logits)
+
+ensem_ori_preds = logits_to_preds(ensem_ori_logits)
+ensem_pow_preds = logits_to_preds(ensem_pow_logits)
+
+write_preds_dict(ensem_ori_preds, "orientation")
+write_preds_dict(ensem_pow_preds, "power")
